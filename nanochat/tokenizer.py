@@ -20,6 +20,8 @@ SPECIAL_TOKENS = [
     "<|assistant_end|>",
     "<|python_start|>", # assistant invokes python REPL tool
     "<|python_end|>",
+    "<|web_search_start|>", # assistant invokes web search tool
+    "<|web_search_end|>",
     "<|output_start|>", # python REPL outputs back to assistant
     "<|output_end|>",
 ]
@@ -296,6 +298,7 @@ class RustBPETokenizer:
         user_start, user_end = self.encode_special("<|user_start|>"), self.encode_special("<|user_end|>")
         assistant_start, assistant_end = self.encode_special("<|assistant_start|>"), self.encode_special("<|assistant_end|>")
         python_start, python_end = self.encode_special("<|python_start|>"), self.encode_special("<|python_end|>")
+        web_search_start, web_search_end = self.encode_special("<|web_search_start|>"), self.encode_special("<|web_search_end|>")
         output_start, output_end = self.encode_special("<|output_start|>"), self.encode_special("<|output_end|>")
 
         # now we can tokenize the conversation
@@ -332,6 +335,11 @@ class RustBPETokenizer:
                             add_tokens(python_start, 1)
                             add_tokens(value_ids, 1)
                             add_tokens(python_end, 1)
+                        elif part["type"] == "web_search":
+                            # web search tool call => add the tokens inside <|web_search_start|> and <|web_search_end|>
+                            add_tokens(web_search_start, 1)
+                            add_tokens(value_ids, 1)
+                            add_tokens(web_search_end, 1)
                         elif part["type"] == "python_output":
                             # python output => add the tokens inside <|output_start|> and <|output_end|>
                             # none of these tokens are supervised because the tokens come from Python at test time

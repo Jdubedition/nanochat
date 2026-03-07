@@ -7,10 +7,30 @@ import os
 import json
 from tasks.common import Task
 
+def _validate_content(content, role: str, message_idx: int):
+    """Content must be str, or (assistant only) a list of parts with type and text."""
+    if isinstance(content, str):
+        return
+    if isinstance(content, list) and role == "assistant":
+        for j, part in enumerate(content):
+            assert isinstance(part, dict), f"Message {message_idx} part {j} must be a dict"
+            assert "type" in part, f"Message {message_idx} part {j} missing 'type'"
+            assert "text" in part, f"Message {message_idx} part {j} missing 'text'"
+            assert part["type"] in ("text", "python", "web_search", "python_output"), (
+                f"Message {message_idx} part {j} type must be text|python|web_search|python_output, got {part['type']!r}"
+            )
+        return
+    raise AssertionError(
+        f"Message {message_idx} content must be a string, or (assistant only) a list of {{'type', 'text'}} parts"
+    )
+
+
 class CustomJSON(Task):
     """
     Load conversations from a JSONL file.
     Each line should be a JSON array of message objects with 'role' and 'content' fields.
+    User content must be a string. Assistant content can be a string or a list of parts
+    (e.g. [{"type":"text","text":"..."}, {"type":"web_search","text":"query | 5"}]).
     Example line: [{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello"}]
     """
 
@@ -47,7 +67,7 @@ class CustomJSON(Task):
                         assert "content" in message, f"Message {i} missing 'content' field"
                         expected_role = "user" if i % 2 == 0 else "assistant"
                         assert message["role"] == expected_role, f"Message {i} has role {message['role']} but should be {expected_role}"
-                        assert isinstance(message["content"], str), f"Message {i} content must be a string"
+                        _validate_content(message["content"], message["role"], i)
 
                     self.conversations.append(messages)
 

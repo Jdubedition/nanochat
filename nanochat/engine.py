@@ -20,7 +20,7 @@ from collections import deque
 from nanochat.common import compute_init, autodetect_device_type
 from nanochat.checkpoint_manager import load_model
 from contextlib import nullcontext
-
+from nanochat.execution import web_search
 # -----------------------------------------------------------------------------
 # Calculator tool helpers
 @contextmanager
@@ -159,6 +159,8 @@ class RowState:
         self.forced_tokens = deque() # Queue of tokens to force inject
         self.in_python_block = False # Whether we are inside a python block
         self.python_expr_tokens = [] # Tokens of the current python expression
+        self.in_web_search_block = False # Whether we are inside a web_search block
+        self.web_search_expr_tokens = [] # Tokens of the current web_search expression (query|max_results)
         self.completed = False # Whether this row has completed generation
 
 class Engine:
@@ -186,6 +188,8 @@ class Engine:
         get_special = lambda s: self.tokenizer.encode_special(s)
         python_start = get_special("<|python_start|>")
         python_end = get_special("<|python_end|>")
+        web_search_start = get_special("<|web_search_start|>")
+        web_search_end = get_special("<|web_search_end|>")
         output_start = get_special("<|output_start|>")
         output_end = get_special("<|output_end|>")
         assistant_end = get_special("<|assistant_end|>") # if sampled, ends row
@@ -265,6 +269,21 @@ class Engine:
                     state.python_expr_tokens = []
                 elif state.in_python_block:
                     state.python_expr_tokens.append(next_token)
+                elif next_token == web_search_start:
+                    state.in_web_search_block = True
+                    state.web_search_expr_tokens = []
+                elif next_token == web_search_end and state.in_web_search_block:
+                    state.in_web_search_block = False
+                    if state.web_search_expr_tokens:
+                        expr = self.tokenizer.decode(state.web_search_expr_tokens)
+                        result = web_search(expr)
+                        result_tokens = self.tokenizer.encode(result)
+                        state.forced_tokens.append(output_start)
+                        state.forced_tokens.extend(result_tokens)
+                        state.forced_tokens.append(output_end)
+                    state.web_search_expr_tokens = []
+                elif state.in_web_search_block:
+                    state.web_search_expr_tokens.append(next_token)
 
             # Yield the token column
             yield token_column, token_masks

@@ -31,6 +31,8 @@ import signal
 import tempfile
 from dataclasses import dataclass
 from typing import Optional
+from ddgs import DDGS
+from typing import List, Dict, Any
 
 # -----------------------------------------------------------------------------
 
@@ -238,7 +240,7 @@ def _unsafe_execute(code: str, timeout: float, maximum_memory_bytes: Optional[in
         })
 
         try:
-            exec_globals = {}
+            exec_globals = {"web_search": web_search}
             with capture_io() as (stdout_capture, stderr_capture):
                 with time_limit(timeout):
                     # WARNING
@@ -347,3 +349,55 @@ def execute_code(
         memory_exceeded=result_dict["memory_exceeded"],
     )
 
+def web_search(expr: str) -> str:
+    """
+    Dedicated web_search tool.
+    Model will call this via Python block; returns nicely formatted string.
+
+    Accepts an expression of the form:
+        "query text | max_results"
+    or just:
+        "query text"
+    """
+    # Parse "query | max_results" expression
+    expr = expr.strip()
+    if "|" in expr:
+        query_part, max_part = expr.split("|", 1)
+        query = query_part.strip()
+        try:
+            max_results = int(max_part.strip())
+        except ValueError:
+            max_results = 5
+    else:
+        query = expr
+        max_results = 5
+
+    # Strip optional surrounding quotes (model or training data may wrap the query)
+    if len(query) >= 2 and query[0] == query[-1] and query[0] in ("'", '"'):
+        query = query[1:-1].strip()
+
+    if not query:
+        return "Web search error: Empty query"
+
+    try:
+        with DDGS() as ddgs:
+            results: List[Dict[str, Any]] = list(ddgs.text(query, max_results=max_results))
+
+        if not results:
+            return f"No search results found for: '{query}'"
+
+        output = [f"🔍 Web search for: \"{query}\""]
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "No title")
+            href = r.get("href", "No link")
+            body = r.get("body", "")[:280]
+            output.append(f"{i}. **{title}**")
+            output.append(f"   {href}")
+            if body:
+                output.append(f"   {body}{'...' if len(r.get('body','')) > 280 else ''}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Web search error: {type(e).__name__}: {str(e)[:120]}"
